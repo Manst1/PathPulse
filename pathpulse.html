@@ -1,0 +1,308 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>PathPulse</title>
+    <!-- Use local tailwind.min.js for offline use; currently using CDN for original styling -->
+    <script src="https://cdn.tailwindcss.com"></script>
+    <style>
+        body {
+            background: #1C2526;
+            overflow: hidden;
+            display: flex;
+            justify-content: center;
+            align-items: center;
+            height: 100vh;
+            margin: 0;
+            font-family: 'Arial', sans-serif;
+        }
+        canvas {
+            border: 2px solid #55FFFF20;
+            border-radius: 10px;
+            box-shadow: 0 0 20px rgba(85, 255, 255, 0.2);
+        }
+        #startScreen, #gameOverScreen {
+            position: absolute;
+            background: rgba(28, 37, 38, 0.8);
+            color: #55FFFF;
+            padding: 20px;
+            border-radius: 10px;
+            text-align: center;
+            display: none;
+        }
+        #hud {
+            position: absolute;
+            top: 20px;
+            left: 20px;
+            color: #55FFFF;
+            font-size: 16px;
+            text-shadow: 0 0 5px #55FFFF;
+        }
+        .gradient-button {
+            background: linear-gradient(to right, #55FFFF, #00A1D6);
+            transition: transform 0.2s;
+        }
+        .gradient-button:hover {
+            transform: scale(1.05);
+        }
+    </style>
+</head>
+<body>
+    <div id="hud"></div>
+    <canvas id="gameCanvas" width="800" height="600"></canvas>
+    <div id="startScreen">
+        <h1 class="text-4xl font-bold mb-4 text-cyan-300">PathPulse</h1>
+        <p class="text-lg mb-4">Guide the red dot from left to right along the white path, avoiding the red outline.<br><br><strong>Controls:</strong><br>WASD or Arrow Keys: Move dot<br>Space: Start/Retry<br><br>Click a difficulty to begin!</p>
+        <button id="easyButton" class="gradient-button text-white font-bold py-2 px-4 rounded mr-2">Easy</button>
+        <button id="normalButton" class="gradient-button text-white font-bold py-2 px-4 rounded mr-2">Normal</button>
+        <button id="hardButton" class="gradient-button text-white font-bold py-2 px-4 rounded">Hard</button>
+    </div>
+    <div id="gameOverScreen">
+        <h1 class="text-4xl font-bold mb-4 text-cyan-300">Game Over</h1>
+        <p class="text-lg mb-4">Level Reached: <span id="finalLevel">0</span><br>Difficulty: <span id="finalDifficulty">Easy</span><br><span id="lossReason">Lost</span></p>
+        <button id="retryButton" class="gradient-button text-white font-bold py-2 px-4 rounded mr-2">Retry (Space)</button>
+        <button id="changeDifficultyButton" class="gradient-button text-white font-bold py-2 px-4 rounded">Change Difficulty</button>
+    </div>
+    <script>
+        const canvas = document.getElementById('gameCanvas');
+        const ctx = canvas.getContext('2d');
+        const hud = document.getElementById('hud');
+        const startScreen = document.getElementById('startScreen');
+        const gameOverScreen = document.getElementById('gameOverScreen');
+        const finalLevel = document.getElementById('finalLevel');
+        const finalDifficulty = document.getElementById('finalDifficulty');
+        const lossReason = document.getElementById('lossReason');
+        const easyButton = document.getElementById('easyButton');
+        const normalButton = document.getElementById('normalButton');
+        const hardButton = document.getElementById('hardButton');
+        const retryButton = document.getElementById('retryButton');
+        const changeDifficultyButton = document.getElementById('changeDifficultyButton');
+
+        let gameRunning = false;
+        let player = { x: 50, y: 300, radius: 5, speed: 3 };
+        let path = [];
+        let level = 1;
+        let difficulty = 'Easy';
+        let baseWidth = 60;
+        let widthDecrement = 2;
+        let baseFrequency = 0.005;
+        let frequencyIncrement = 0.0025;
+        let keys = { w: false, a: false, s: false, d: false, ArrowUp: false, ArrowDown: false, ArrowLeft: false, ArrowRight: false };
+
+        function generatePath() {
+            path = [];
+            const seed = Date.now();
+            const width = Math.max(10, baseWidth - (level - 1) * widthDecrement);
+            for (let x = 50; x <= 750; x += 5) {
+                const t = (x - 50) * (baseFrequency + (level - 1) * frequencyIncrement);
+                const randomOffset = Math.sin(seed + x * 0.02) * 15 + Math.cos(seed * 0.01 + x * 0.03) * 10;
+                const amplitude1 = (difficulty === 'Hard' ? 96 : difficulty === 'Normal' ? 88 : 80) + Math.sin(seed * 0.005) * 20;
+                const amplitude2 = (difficulty === 'Hard' ? 48 : difficulty === 'Normal' ? 44 : 40) + Math.cos(seed * 0.007) * 15;
+                const y = 300 + Math.sin(t) * amplitude1 + Math.sin(t * 1.3) * amplitude2 + randomOffset;
+                let segmentWidth = width + Math.sin(t * 0.5 + seed) * 2;
+                // Ensure wider path at start (x < 100) for Hard mode
+                if (x < 100 && difficulty === 'Hard') {
+                    segmentWidth = Math.max(12, segmentWidth);
+                }
+                path.push({ x, y, width: Math.max(10, segmentWidth) });
+            }
+            // Set player starting position to match path
+            player.y = path[0].y;
+        }
+
+        function updatePlayer() {
+            let dx = 0;
+            let dy = 0;
+            if (keys.w || keys.ArrowUp) dy -= player.speed;
+            if (keys.s || keys.ArrowDown) dy += player.speed;
+            if (keys.a || keys.ArrowLeft) dx -= player.speed;
+            if (keys.d || keys.ArrowRight) dx += player.speed;
+
+            if (dx !== 0 && dy !== 0) {
+                dx *= 0.707;
+                dy *= 0.707;
+            }
+
+            const newX = player.x + dx;
+            const newY = player.y + dy;
+
+            if (newX >= 0 && newX <= canvas.width && newY >= 0 && newY <= canvas.height) {
+                player.x = newX;
+                player.y = newY;
+            }
+
+            let onPath = false;
+            let hitRed = false;
+            let closestSegment = null;
+            let minDistance = Infinity;
+            for (let segment of path) {
+                const dx = player.x - segment.x;
+                const dy = player.y - segment.y;
+                const distance = Math.sqrt(dx * dx + dy * dy);
+                if (distance < minDistance) {
+                    minDistance = distance;
+                    closestSegment = segment;
+                }
+            }
+
+            if (closestSegment) {
+                const distance = Math.sqrt((player.x - closestSegment.x) ** 2 + (player.y - closestSegment.y) ** 2);
+                if (distance <= closestSegment.width / 2 + 1) onPath = true;
+                if (distance >= closestSegment.width / 2 - 6 && distance <= closestSegment.width / 2 + 6) hitRed = true;
+            }
+
+            if (!onPath) {
+                endGame('Left the path');
+            } else if (hitRed) {
+                endGame('Touched red line');
+            }
+
+            if (player.x >= 750) {
+                level++;
+                generatePath();
+                player.x = 50;
+                player.y = path[0].y;
+            }
+        }
+
+        function drawBackground() {
+            ctx.fillStyle = '#1C2526';
+            ctx.fillRect(0, 0, canvas.width, canvas.height);
+            ctx.strokeStyle = '#55FFFF10';
+            ctx.lineWidth = 1;
+            for (let x = 0; x <= canvas.width; x += 40) {
+                ctx.beginPath();
+                ctx.moveTo(x, 0);
+                ctx.lineTo(x, canvas.height);
+                ctx.stroke();
+            }
+            for (let y = 0; y <= canvas.height; y += 40) {
+                ctx.beginPath();
+                ctx.moveTo(0, y);
+                ctx.lineTo(canvas.width, y);
+                ctx.stroke();
+            }
+        }
+
+        function drawPath() {
+            ctx.beginPath();
+            ctx.moveTo(path[0].x, path[0].y);
+            for (let i = 1; i < path.length; i++) {
+                ctx.lineTo(path[i].x, path[i].y);
+            }
+            ctx.strokeStyle = '#FF5555';
+            ctx.lineWidth = path[0].width + 10;
+            ctx.stroke();
+
+            ctx.beginPath();
+            ctx.moveTo(path[0].x, path[0].y);
+            for (let i = 1; i < path.length; i++) {
+                ctx.lineTo(path[i].x, path[i].y);
+            }
+            ctx.strokeStyle = '#E0E0E0';
+            ctx.lineWidth = path[0].width;
+            ctx.shadowColor = '#55FFFF';
+            ctx.shadowBlur = 10;
+            ctx.stroke();
+            ctx.shadowBlur = 0;
+        }
+
+        function drawPlayer() {
+            ctx.beginPath();
+            ctx.arc(player.x, player.y, player.radius, 0, Math.PI * 2);
+            ctx.fillStyle = '#FF3333';
+            ctx.fill();
+        }
+
+        function updateHUD() {
+            hud.innerHTML = `Level: ${level} | Difficulty: ${difficulty}`;
+        }
+
+        function startGame(diff) {
+            gameRunning = true;
+            difficulty = diff;
+            level = 1;
+            if (diff === 'Easy') {
+                baseWidth = 60;
+                widthDecrement = 2;
+                baseFrequency = 0.005;
+                frequencyIncrement = 0.0025;
+            } else if (diff === 'Normal') {
+                baseWidth = 45;
+                widthDecrement = 3;
+                baseFrequency = 0.015;
+                frequencyIncrement = 0.015;
+            } else if (diff === 'Hard') {
+                baseWidth = 36; // Slightly wider than original 35 for playability
+                widthDecrement = 4;
+                baseFrequency = 0.025;
+                frequencyIncrement = 0.025;
+            }
+            player.x = 50;
+            generatePath(); // Sets player.y to path[0].y
+            startScreen.style.display = 'none';
+            gameOverScreen.style.display = 'none';
+            requestAnimationFrame(gameLoop);
+        }
+
+        function endGame(reason) {
+            gameRunning = false;
+            finalLevel.textContent = level;
+            finalDifficulty.textContent = difficulty;
+            lossReason.textContent = reason;
+            gameOverScreen.style.display = 'block';
+        }
+
+        function gameLoop() {
+            if (!gameRunning) return;
+
+            ctx.clearRect(0, 0, canvas.width, canvas.height);
+
+            drawBackground();
+            drawPath();
+            updatePlayer();
+            drawPlayer();
+            updateHUD();
+
+            requestAnimationFrame(gameLoop);
+        }
+
+        document.addEventListener('keydown', e => {
+            if (e.key === 'w') keys.w = true;
+            if (e.key === 'a') keys.a = true;
+            if (e.key === 's') keys.s = true;
+            if (e.key === 'd') keys.d = true;
+            if (e.key === 'ArrowUp') keys.ArrowUp = true;
+            if (e.key === 'ArrowDown') keys.ArrowDown = true;
+            if (e.key === 'ArrowLeft') keys.ArrowLeft = true;
+            if (e.key === 'ArrowRight') keys.ArrowRight = true;
+            if (e.key === ' ' && !gameRunning && gameOverScreen.style.display === 'block') {
+                startGame(difficulty);
+            }
+        });
+
+        document.addEventListener('keyup', e => {
+            if (e.key === 'w') keys.w = false;
+            if (e.key === 'a') keys.a = false;
+            if (e.key === 's') keys.s = false;
+            if (e.key === 'd') keys.d = false;
+            if (e.key === 'ArrowUp') keys.ArrowUp = false;
+            if (e.key === 'ArrowDown') keys.ArrowDown = false;
+            if (e.key === 'ArrowLeft') keys.ArrowLeft = false;
+            if (e.key === 'ArrowRight') keys.ArrowRight = false;
+        });
+
+        easyButton.addEventListener('click', () => startGame('Easy'));
+        normalButton.addEventListener('click', () => startGame('Normal'));
+        hardButton.addEventListener('click', () => startGame('Hard'));
+        retryButton.addEventListener('click', () => startGame(difficulty));
+        changeDifficultyButton.addEventListener('click', () => {
+            gameOverScreen.style.display = 'none';
+            startScreen.style.display = 'block';
+        });
+
+        startScreen.style.display = 'block';
+    </script>
+</body>
+</html>
