@@ -4,7 +4,6 @@
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>PathPulse</title>
-    <!-- Use local tailwind.min.js for offline use; currently using CDN for original styling -->
     <script src="https://cdn.tailwindcss.com"></script>
     <style>
         body {
@@ -80,7 +79,7 @@
         const changeDifficultyButton = document.getElementById('changeDifficultyButton');
 
         let gameRunning = false;
-        let player = { x: 50, y: 300, radius: 5, speed: 3 };
+        let player = { x: 50, y: 300, radius: 5, speed: 180 }; // Speed in pixels per second
         let path = [];
         let level = 1;
         let difficulty = 'Easy';
@@ -89,6 +88,7 @@
         let baseFrequency = 0.005;
         let frequencyIncrement = 0.0025;
         let keys = { w: false, a: false, s: false, d: false, ArrowUp: false, ArrowDown: false, ArrowLeft: false, ArrowRight: false };
+        let lastTime = 0;
 
         function generatePath() {
             path = [];
@@ -111,21 +111,24 @@
             player.y = path[0].y;
         }
 
-        function updatePlayer() {
+        function updatePlayer(deltaTime) {
             let dx = 0;
             let dy = 0;
-            if (keys.w || keys.ArrowUp) dy -= player.speed;
-            if (keys.s || keys.ArrowDown) dy += player.speed;
-            if (keys.a || keys.ArrowLeft) dx -= player.speed;
-            if (keys.d || keys.ArrowRight) dx += player.speed;
+            if (keys.w || keys.ArrowUp) dy -= 1;
+            if (keys.s || keys.ArrowDown) dy += 1;
+            if (keys.a || keys.ArrowLeft) dx -= 1;
+            if (keys.d || keys.ArrowRight) dx += 1;
 
+            // Normalize diagonal movement
             if (dx !== 0 && dy !== 0) {
                 dx *= 0.707;
                 dy *= 0.707;
             }
 
-            const newX = player.x + dx;
-            const newY = player.y + dy;
+            // Calculate movement based on time, not frames
+            const moveDistance = player.speed * (deltaTime / 1000);
+            const newX = player.x + dx * moveDistance;
+            const newY = player.y + dy * moveDistance;
 
             if (newX >= 0 && newX <= canvas.width && newY >= 0 && newY <= canvas.height) {
                 player.x = newX;
@@ -243,6 +246,7 @@
             generatePath(); // Sets player.y to path[0].y
             startScreen.style.display = 'none';
             gameOverScreen.style.display = 'none';
+            lastTime = performance.now();
             requestAnimationFrame(gameLoop);
         }
 
@@ -254,14 +258,18 @@
             gameOverScreen.style.display = 'block';
         }
 
-        function gameLoop() {
+        function gameLoop(timestamp) {
             if (!gameRunning) return;
+
+            // Calculate delta time for frame-rate independent movement
+            const deltaTime = timestamp - lastTime;
+            lastTime = timestamp;
 
             ctx.clearRect(0, 0, canvas.width, canvas.height);
 
             drawBackground();
             drawPath();
-            updatePlayer();
+            updatePlayer(deltaTime);
             drawPlayer();
             updateHUD();
 
